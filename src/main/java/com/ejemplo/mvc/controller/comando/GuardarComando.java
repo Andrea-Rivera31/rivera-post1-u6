@@ -7,6 +7,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class GuardarComando implements Comando {
 
@@ -19,24 +22,57 @@ public class GuardarComando implements Comando {
             throws IOException {
 
         String titulo = req.getParameter("titulo");
+        String categoria = req.getParameter("categoria");
+        String prioridad = req.getParameter("prioridad");
+        String fechaStr = req.getParameter("fechaLimite");
+
+        // Límite leído del contexto de aplicación (context-param de web.xml),
+        // no escrito como literal: se puede cambiar sin recompilar
+        int maxLongitud = (Integer)
+                req.getServletContext().getAttribute("maxLongitudTitulo");
+
+        // LinkedHashMap conserva el orden en que se agregan los errores
+        Map<String, String> errores = new LinkedHashMap<>();
+
         if (titulo == null || titulo.trim().isEmpty()) {
-            req.setAttribute("error", "El título es obligatorio.");
-            return "/WEB-INF/views/formulario.jsp";
+            errores.put("titulo", "El título es obligatorio.");
+        } else if (titulo.trim().length() > maxLongitud) {
+            errores.put("titulo",
+                    "El título no debe superar " + maxLongitud + " caracteres.");
         }
 
+        if (categoria == null || categoria.trim().isEmpty()) {
+            errores.put("categoria", "La categoría es obligatoria.");
+        }
+
+        if (!"Alta".equals(prioridad) && !"Media".equals(prioridad)
+                && !"Baja".equals(prioridad)) {
+            errores.put("prioridad", "Seleccione una prioridad válida.");
+        }
+
+        Date fechaLimite = null;
         try {
-            Tarea t = new Tarea(0, titulo.trim(),
-                    req.getParameter("categoria"),
-                    req.getParameter("prioridad"),
-                    new SimpleDateFormat("yyyy-MM-dd")
-                            .parse(req.getParameter("fechaLimite")));
-            service.guardar(t);
-        } catch (ParseException e) {
-            req.setAttribute("error", "La fecha límite debe tener el formato yyyy-MM-dd.");
+            fechaLimite = new SimpleDateFormat("yyyy-MM-dd").parse(fechaStr);
+            if (fechaLimite.before(new Date())) {
+                errores.put("fechaLimite", "La fecha límite no puede estar en el pasado.");
+            }
+        } catch (ParseException | NullPointerException e) {
+            errores.put("fechaLimite", "Use el formato yyyy-MM-dd (ej: 2026-12-20).");
+        }
+
+        // Si hay errores se devuelve el formulario con los valores ingresados
+        if (!errores.isEmpty()) {
+            req.setAttribute("errores", errores);
+            req.setAttribute("titulo", titulo);
+            req.setAttribute("categoria", categoria);
+            req.setAttribute("prioridad", prioridad);
+            req.setAttribute("fechaLimite", fechaStr);
             return "/WEB-INF/views/formulario.jsp";
         }
 
-        // Patrón PRG: redirigir tras guardar para evitar reenvío del formulario
+        service.guardar(new Tarea(0, titulo.trim(), categoria.trim(),
+                prioridad, fechaLimite));
+
         resp.sendRedirect(req.getContextPath() + "/app?comando=listar");
         return null;
     }
